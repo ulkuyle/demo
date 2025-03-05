@@ -3,26 +3,29 @@ package com.example.demo.service;
 import com.example.demo.dto.OrderDTO;
 import com.example.demo.enums.OrderSide;
 import com.example.demo.enums.OrderStatus;
+import com.example.demo.exception.InsufficientAssetException;
 import com.example.demo.exception.InsufficientBalanceException;
 import com.example.demo.model.Asset;
-import com.example.demo.model.AuthToken;
-import com.example.demo.model.Customer;
 import com.example.demo.model.Order;
 import com.example.demo.repository.AssetRepository;
 import com.example.demo.repository.OrderRepository;
+import com.example.demo.service.strategy.OrderSideHandling;
+import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
+import lombok.RequiredArgsConstructor;
 import lombok.SneakyThrows;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
-import java.nio.file.AccessDeniedException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Validated
-@AllArgsConstructor
 public class OrderService {
 
     private final OrderRepository orderRepository;
@@ -31,38 +34,34 @@ public class OrderService {
 
     private final AuthService authService;
 
+    private final Map<OrderSide, OrderSideHandling> orderStrategies;
+
+    public OrderService(OrderRepository orderRepository, AssetRepository assetRepository,
+                        AuthService authService, List<OrderSideHandling> strategies) {
+        this.orderRepository = orderRepository;
+        this.assetRepository = assetRepository;
+        this.authService = authService;
+        this.orderStrategies = strategies.stream()
+                .collect(Collectors.toMap(OrderSideHandling::getOrderSide, Function.identity()));
+    }
+
     @SneakyThrows
+    @Transactional
     public String createOrder(String authorizationHeader, OrderDTO order) {
         authService.checkIfUserAuthorized(authorizationHeader, order.getCustomerId());
-
-        if (order.getOrderSide() == OrderSide.BUY) {
-            Asset tryAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), "TRY");
-
-            BigDecimal requiredAmount = order.getPrice().multiply(BigDecimal.valueOf(order.getSize()));
-            if(tryAsset == null || BigDecimal.valueOf(tryAsset.getUsableSize()).compareTo(requiredAmount) < 0) {
-                throw new InsufficientBalanceException("Insufficient TRY!");
-            }
-
-            tryAsset = tryAsset.toBuilder()
-                    .usableSize(BigDecimal.valueOf(tryAsset.getUsableSize()).subtract(requiredAmount).intValue())
-                    .build();
-            assetRepository.save(tryAsset);
-
-        } else {
-            Asset sellAsset = assetRepository.findByCustomerIdAndAssetName(order.getCustomerId(), order.getAssetName());
-
-            if (sellAsset == null || BigDecimal.valueOf(sellAsset.getUsableSize()).compareTo(BigDecimal.valueOf(order.getSize())) < 0) {
-                return "Insufficient asset!";
-            }
-
-            sellAsset = sellAsset.toBuilder()
-                    .usableSize(BigDecimal.valueOf(sellAsset.getUsableSize()).subtract(BigDecimal.valueOf(order.getSize())).intValue())
-                    .build();
-            assetRepository.save(sellAsset);
+        if (order.getAssetName().equals("TRY")) {
+            return "You cannot create order for TRY!";
         }
+        try {
+            OrderSideHandling orderSideHandling = orderStrategies.get(order.getOrderSide());
+            orderSideHandling.handleOrder(order);
+        } catch (InsufficientBalanceException | InsufficientAssetException e) {
+            return e.getMessage();
+        }
+        Order createdOrder = Order.builder().customerId(order.getCustomerId()).assetName(order.getAssetName())
+                .orderSide(order.getOrderSide()).size(order.getSize()).price(order.getPrice()).orderStatus(OrderStatus.PENDING)
+                .createdDate(LocalDateTime.now()).build();
 
-        Order createdOrder = Order.builder().customerId(order.getCustomerId()).assetName(order.getAssetName()).orderSide(order.getOrderSide()).size(order.getSize()).price(order.getPrice())
-                .orderStatus(OrderStatus.PENDING).createdDate(LocalDateTime.now()).build();
         orderRepository.save(createdOrder);
 
         return "Order created successfully!";

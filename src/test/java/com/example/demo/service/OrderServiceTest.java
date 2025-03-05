@@ -16,6 +16,9 @@ import com.example.demo.model.Asset;
 import com.example.demo.model.Order;
 import com.example.demo.repository.AssetRepository;
 import com.example.demo.repository.OrderRepository;
+import com.example.demo.service.strategy.BuyOrder;
+import com.example.demo.service.strategy.OrderSideHandling;
+import com.example.demo.service.strategy.SellOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,9 +35,14 @@ public class OrderServiceTest {
     private OrderRepository orderRepository;
 
     @Mock
+    private BuyOrder buyOrder;
+
+    @Mock
+    private SellOrder sellOrder;
+
+    @Mock
     private AuthService authService;
 
-    @InjectMocks
     private OrderService orderService;
 
     private OrderDTO validOrderDTO;
@@ -45,6 +53,13 @@ public class OrderServiceTest {
 
     @BeforeEach
     public void setUp() throws AccessDeniedException {
+        MockitoAnnotations.openMocks(this);
+        when(buyOrder.getOrderSide()).thenReturn(OrderSide.BUY);
+        when(sellOrder.getOrderSide()).thenReturn(OrderSide.SELL);
+
+        List<OrderSideHandling> strategies = List.of(buyOrder, sellOrder);
+        orderService = new OrderService(orderRepository, assetRepository, authService, strategies);
+
         authHeader = "Bearer token";
         lenient().doNothing().when(authService).checkIfUserAuthorized(authHeader, 1L);
 
@@ -65,41 +80,12 @@ public class OrderServiceTest {
 
     @Test
     public void givenValidOrder_whenCreateOrder_thenSuccess() {
-        when(assetRepository.findByCustomerIdAndAssetName(1L, "TRY")).thenReturn(tryAsset);
-
         String result = orderService.createOrder(authHeader, validOrderDTO);
-
         assertEquals("Order created successfully!", result);
-        verify(assetRepository).save(any(Asset.class));
     }
 
     @Test
-    public void givenInsufficientTRYBalance_whenCreateOrder_thenThrowInsufficientBalanceException() {
-        when(assetRepository.findByCustomerIdAndAssetName(1L, "TRY")).thenReturn(tryAsset);
-        validOrderDTO = validOrderDTO.toBuilder().size(200).build();
-
-        Exception exception = assertThrows(InsufficientBalanceException.class, () -> {
-            orderService.createOrder(authHeader, validOrderDTO);
-        });
-
-        assertEquals("Insufficient TRY!", exception.getMessage());
-    }
-
-    @Test
-    public void givenInsufficientSellAssetBalance_whenCreateOrder_thenReturnInsufficientBalanceMessage() {
-       Asset sellAsset = Asset.builder().customerId(1L).assetName("BTC").usableSize(50).build();
-        when(assetRepository.findByCustomerIdAndAssetName(1L, "BTC")).thenReturn(sellAsset);
-        validOrderDTO = validOrderDTO.toBuilder()
-                .orderSide(OrderSide.SELL)
-                .size(100)
-                .build();
-
-        String result = orderService.createOrder(authHeader, validOrderDTO);
-        assertEquals("Insufficient asset!", result);
-    }
-
-    @Test
-    void givenValidBuyOrder_whenDleteOrder_thenReturnSuccessMessage() {
+    void givenValidBuyOrder_whenDeleteOrder_thenReturnSuccessMessage() {
 
         Order buyOrder = Order.builder().id(1L).customerId(1L).orderStatus(OrderStatus.PENDING).orderSide(OrderSide.BUY)
                 .assetName("BTC").size(2).price(BigDecimal.valueOf(50000))
@@ -115,7 +101,6 @@ public class OrderServiceTest {
 
         assertEquals("Order deleted successfully!", result);
     }
-
 
     @Test
     void givenNonExistingOrder_whenDeleteOrder_thenThrowIllegalArgumentException() {
@@ -161,4 +146,5 @@ public class OrderServiceTest {
         assertEquals("BTC", result.get(0).getAssetName());
         assertEquals("ETH", result.get(1).getAssetName());
     }
+
 }
