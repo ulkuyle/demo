@@ -7,10 +7,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 @RestController
@@ -21,15 +19,17 @@ public class CustomerController {
 
     private final CustomerService customerService;
 
-    @PostMapping(value ="/find")
-    public ResponseEntity<Customer> findCustomer(@RequestBody Long customerId) {
-        Customer createdCustomer = customerService.findByCustomerId(customerId).orElseThrow(() -> new ResponseStatusException(
-                HttpStatus.NOT_FOUND, "No such Customer: " + customerId
-        ));
-        return ResponseEntity.ok(createdCustomer);
+    @GetMapping(value ="/find")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
+    public ResponseEntity<?> findCustomer(@RequestParam Long customerId) {
+        return customerService.findByCustomerId(customerId)
+                .<ResponseEntity<?>>map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("No such Customer: " + customerId));
     }
 
     @Operation(description = "This endpoint creates a new customer")
+    @PreAuthorize("hasRole('ROLE_ADMIN')")
     @PostMapping("/create")
     public ResponseEntity<Customer> addCustomer(@RequestBody Customer customer) {
         Customer savedCustomer = customerService.createCustomer(customer);
