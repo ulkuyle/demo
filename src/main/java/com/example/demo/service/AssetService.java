@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -15,10 +16,8 @@ public class AssetService {
     private final AssetRepository assetRepository;
 
     public List<Asset> getAssetsByCustomer(Long customerId) {
-        List<Asset> assets = assetRepository.findByCustomerId(customerId);
-        if (assets.isEmpty()) {
-            throw new NoSuchElementException("No asset found for customer: " + customerId);
-        }
-        return assets;
+        return Optional.ofNullable(assetRepository.findByCustomerId(customerId))
+                .filter(assets -> !assets.isEmpty())
+                .orElseThrow(() -> new NoSuchElementException("No asset found for customer: " + customerId));
     }
 }
