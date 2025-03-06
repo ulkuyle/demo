@@ -14,4 +14,8 @@ Initial Asset Values:
 
 
 
-Please run LOGIN endpoint first and get TOKEN to use in other endpoints.              
+
+Please run LOGIN endpoint first and get TOKEN to use in other endpoints. 
+
+
+<img width="1153" alt="Ekran Resmi 2025-03-06 09 16 22" src="https://github.com/user-attachments/assets/f6a07201-d06b-4659-b6a4-30b38dd81903" />
